@@ -11,7 +11,7 @@ import static org.mockito.Mockito.when;
 
 
 public class EnvironmentContributingActionTest {
-    class OverrideRun extends InvisibleAction implements EnvironmentContributingAction {
+    static class OverrideRun extends InvisibleAction implements EnvironmentContributingAction {
         private boolean wasCalled = false;
 
         @Override
@@ -24,7 +24,7 @@ public class EnvironmentContributingActionTest {
         }
     }
 
-    class OverrideAbstractBuild extends InvisibleAction implements EnvironmentContributingAction {
+    static class OverrideAbstractBuild extends InvisibleAction implements EnvironmentContributingAction {
         private boolean wasCalled = false;
 
         @Override
@@ -38,14 +38,14 @@ public class EnvironmentContributingActionTest {
         }
     }
 
-    class OverrideBoth extends InvisibleAction implements EnvironmentContributingAction {
-        private boolean wasCalledAstractBuild = false;
+    static class OverrideBoth extends InvisibleAction implements EnvironmentContributingAction {
+        private boolean wasCalledAbstractBuild = false;
         private boolean wasCalledRun = false;
 
         @SuppressWarnings("deprecation")
         @Override
         public void buildEnvVars(AbstractBuild<?, ?> abstractBuild, EnvVars envVars) {
-            wasCalledAstractBuild = true;
+            wasCalledAbstractBuild = true;
         }
 
         @Override
@@ -54,7 +54,7 @@ public class EnvironmentContributingActionTest {
         }
 
         boolean wasDeprecatedMethodCalled() {
-            return wasCalledAstractBuild;
+            return wasCalledAbstractBuild;
         }
 
         boolean wasRunCalled() {

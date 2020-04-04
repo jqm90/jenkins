@@ -29,7 +29,6 @@ import hudson.Util;
 import hudson.diagnosis.OldDataMonitor;
 import hudson.model.Descriptor.FormException;
 import hudson.model.listeners.ItemListener;
-import hudson.search.CollectionSearchIndex;
 import hudson.search.SearchIndexBuilder;
 import hudson.security.ACL;
 import hudson.security.ACLContext;
@@ -65,6 +64,7 @@ import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.StaplerRequest;
 import org.kohsuke.stapler.StaplerResponse;
 import org.kohsuke.stapler.interceptor.RequirePOST;
+import org.kohsuke.stapler.verb.POST;
 
 /**
  * Displays {@link Job}s in a flat list view.
@@ -124,6 +124,11 @@ public class ListView extends View implements DirectlyModifiableView {
         this.columns.replaceBy(columns);
     }
 
+    @DataBoundSetter
+    public void setJobFilters(List<ViewJobFilter> jobFilters) throws IOException {
+        this.jobFilters.replaceBy(jobFilters);
+    }
+
     private Object readResolve() {
         if(includeRegex!=null) {
             try {
@@ -171,6 +176,9 @@ public class ListView extends View implements DirectlyModifiableView {
         return columns;
     }
 
+    public Set<String> getJobNames() {
+        return Collections.unmodifiableSet(jobNames);
+    }
 
     /**
      * Returns a read-only view of all {@link Job}s in this view.
@@ -211,7 +219,7 @@ public class ListView extends View implements DirectlyModifiableView {
         if (recurse) {
             candidates = parent.getAllItems(TopLevelItem.class);
         } else {
-            candidates = parent.getItems();
+            candidates = parentItems;
         }
         for (TopLevelItem item : candidates) {
             if (!names.contains(item.getRelativeNameFrom(getOwner().getItemGroup()))) continue;
@@ -237,15 +245,7 @@ public class ListView extends View implements DirectlyModifiableView {
     @Override
     public SearchIndexBuilder makeSearchIndex() {
         SearchIndexBuilder sib = new SearchIndexBuilder().addAllAnnotations(this);
-        sib.add(new CollectionSearchIndex<TopLevelItem>() {// for jobs in the view
-            protected TopLevelItem get(String key) { return getItem(key); }
-            protected Collection<TopLevelItem> all() { return getItems(); }
-            @Override
-            protected String getName(TopLevelItem o) {
-                // return the name instead of the display for suggestion searching
-                return o.getName();
-            }
-        });
+        makeSearchIndex(sib);
         // add the display name for each item in the search index
         addDisplayNamesToSearchIndex(sib, getItems(true));
         return sib;
@@ -320,14 +320,15 @@ public class ListView extends View implements DirectlyModifiableView {
     public String getIncludeRegex() {
         return includeRegex;
     }
-    
+
     public boolean isRecurse() {
         return recurse;
     }
-    
+
     /**
      * @since 1.568
      */
+    @DataBoundSetter
     public void setRecurse(boolean recurse) {
         this.recurse = recurse;
     }
@@ -368,7 +369,7 @@ public class ListView extends View implements DirectlyModifiableView {
     }
 
     @Override
-    @RequirePOST
+    @POST
     public Item doCreateItem(StaplerRequest req, StaplerResponse rsp) throws IOException, ServletException {
         ItemGroup<? extends TopLevelItem> ig = getOwner().getItemGroup();
         if (ig instanceof ModifiableItemGroup) {
@@ -426,7 +427,7 @@ public class ListView extends View implements DirectlyModifiableView {
         TopLevelItem item = getOwner().getItemGroup().getItem(name);
         if (item == null) {
             name = Items.getCanonicalName(getOwner().getItemGroup(), name);
-            item = Jenkins.getInstance().getItemByFullName(name, TopLevelItem.class);
+            item = Jenkins.get().getItemByFullName(name, TopLevelItem.class);
         }
         return item;
     }
@@ -462,7 +463,7 @@ public class ListView extends View implements DirectlyModifiableView {
             columns = new DescribableList<>(this);
         }
         columns.rebuildHetero(req, json, ListViewColumn.all(), "columns");
-        
+
         if (jobFilters == null) {
         	jobFilters = new DescribableList<>(this);
         }
@@ -473,12 +474,23 @@ public class ListView extends View implements DirectlyModifiableView {
     }
     
     /** @since 1.526 */
+    @DataBoundSetter
     public void setIncludeRegex(String includeRegex) {
         this.includeRegex = Util.nullify(includeRegex);
         if (this.includeRegex == null)
             this.includePattern = null;
         else
             this.includePattern = Pattern.compile(includeRegex);
+    }
+
+    @DataBoundSetter
+    public synchronized void setJobNames(Set<String> jobNames) {
+        this.jobNames = new TreeSet<>(jobNames);
+    }
+
+    @DataBoundSetter
+    public void setStatusFilter(Boolean statusFilter) {
+        this.statusFilter = statusFilter;
     }
 
     @Extension @Symbol("list")
@@ -523,7 +535,7 @@ public class ListView extends View implements DirectlyModifiableView {
             }
         }
         private void locationChanged(String oldFullName, String newFullName) {
-            final Jenkins jenkins = Jenkins.getInstance();
+            final Jenkins jenkins = Jenkins.get();
             locationChanged(jenkins, oldFullName, newFullName);
             for (Item g : jenkins.allItems()) {
                 if (g instanceof ViewGroup) {
@@ -568,7 +580,7 @@ public class ListView extends View implements DirectlyModifiableView {
             }
         }
         private void deleted(Item item) {
-            final Jenkins jenkins = Jenkins.getInstance();
+            final Jenkins jenkins = Jenkins.get();
             deleted(jenkins, item);
             for (Item g : jenkins.allItems()) {
                 if (g instanceof ViewGroup) {

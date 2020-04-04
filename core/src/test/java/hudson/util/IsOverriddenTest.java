@@ -29,7 +29,7 @@ import static org.junit.Assert.*;
 import hudson.Util;
 
 /**
- * Test for {@link Util.isOverridden} method.
+ * Test for {@link Util#isOverridden} method.
  */
 public class IsOverriddenTest {
 
@@ -62,7 +62,7 @@ public class IsOverriddenTest {
         Util.isOverridden(Base.class, Intermediate.class, "aPrivateMethod");
     }
 
-    public abstract class Base<T> {
+    public static abstract class Base<T> {
         protected abstract void method();
         private void aPrivateMethod() {}
         public void setX(T t) {}

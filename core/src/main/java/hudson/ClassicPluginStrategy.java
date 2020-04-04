@@ -186,6 +186,10 @@ public class ClassicPluginStrategy implements PluginStrategy {
             } catch (InvalidPathException e) {
                 throw new IOException(e);
             }
+            String canonicalName = manifest.getMainAttributes().getValue("Short-Name") + ".jpi";
+            if (!archive.getName().equals(canonicalName)) {
+                LOGGER.warning(() -> "encountered " + archive + " under a nonstandard name; expected " + canonicalName);
+            }
         }
 
         final Attributes atts = manifest.getMainAttributes();
@@ -285,7 +289,7 @@ public class ClassicPluginStrategy implements PluginStrategy {
     protected ClassLoader createClassLoader(List<File> paths, ClassLoader parent, Attributes atts) throws IOException {
         if (atts != null) {
             String usePluginFirstClassLoader = atts.getValue( "PluginFirstClassLoader" );
-            if (Boolean.valueOf( usePluginFirstClassLoader )) {
+            if (Boolean.parseBoolean( usePluginFirstClassLoader )) {
                 PluginFirstClassLoader classLoader = new PluginFirstClassLoader();
                 classLoader.setParentFirst( false );
                 classLoader.setParent( parent );
@@ -325,8 +329,8 @@ public class ClassicPluginStrategy implements PluginStrategy {
             finders = hudson.getExtensionList(ExtensionFinder.class);
         }
 
-        /**
-         * See {@link ExtensionFinder#scout(Class, Hudson)} for the dead lock issue and what this does.
+        /*
+         * See ExtensionFinder#scout(Class, Hudson) for the dead lock issue and what this does.
          */
         if (LOGGER.isLoggable(Level.FINER))
             LOGGER.log(Level.FINER, "Scout-loading ExtensionList: "+type, new Throwable());
@@ -427,6 +431,7 @@ public class ClassicPluginStrategy implements PluginStrategy {
         return null;
     }
 
+    @SuppressFBWarnings(value = "PATH_TRAVERSAL_IN", justification = "Administrator action installing a plugin, which could do far worse.")
     private static File resolve(File base, String relative) {
         File rel = new File(relative);
         if(rel.isAbsolute())

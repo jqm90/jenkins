@@ -23,6 +23,7 @@
  */
 package hudson;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.model.TaskListener;
 import jenkins.util.MemoryReductionUtil;
 import hudson.util.QuotedStringTokenizer;
@@ -85,6 +86,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import javax.annotation.CheckForNull;
+import javax.annotation.CheckReturnValue;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.crypto.SecretKey;
@@ -185,11 +187,11 @@ public class Util {
     }
 
     /**
-     * Reads the entire contents of the text file at <code>logfile</code> into a
+     * Reads the entire contents of the text file at {@code logfile} into a
      * string using the {@link Charset#defaultCharset() default charset} for
      * decoding. If no such file exists, an empty string is returned.
      * @param logfile The text file to read in its entirety.
-     * @return The entire text content of <code>logfile</code>.
+     * @return The entire text content of {@code logfile}.
      * @throws IOException If an error occurs while reading the file.
      * @deprecated call {@link #loadFile(java.io.File, java.nio.charset.Charset)}
      * instead to specify the charset to use for decoding (preferably
@@ -202,12 +204,12 @@ public class Util {
     }
 
     /**
-     * Reads the entire contents of the text file at <code>logfile</code> into a
-     * string using <code>charset</code> for decoding. If no such file exists,
+     * Reads the entire contents of the text file at {@code logfile} into a
+     * string using {@code charset} for decoding. If no such file exists,
      * an empty string is returned.
      * @param logfile The text file to read in its entirety.
-     * @param charset The charset to use for decoding the bytes in <code>logfile</code>.
-     * @return The entire text content of <code>logfile</code>.
+     * @param charset The charset to use for decoding the bytes in {@code logfile}.
+     * @return The entire text content of {@code logfile}.
      * @throws IOException If an error occurs while reading the file.
      */
     @Nonnull
@@ -588,6 +590,8 @@ public class Util {
     /**
      * Computes MD5 digest of the given input stream.
      *
+     * This method should only be used for non-security applications where the MD5 weakness is not a problem.
+     *
      * @param source
      *      The stream will be closed by this method at the end of this method.
      * @return
@@ -597,7 +601,7 @@ public class Util {
     @Nonnull
     public static String getDigestOf(@Nonnull InputStream source) throws IOException {
         try {
-            MessageDigest md5 = MessageDigest.getInstance("MD5");
+            MessageDigest md5 = getMd5();
             DigestInputStream in = new DigestInputStream(source, md5);
             // Note: IOUtils.copy() buffers the input internally, so there is no
             // need to use a BufferedInputStream.
@@ -615,6 +619,14 @@ public class Util {
             source.close();
         }
         */
+    }
+
+    // TODO JENKINS-60563 remove MD5 from all usages in Jenkins
+    @SuppressFBWarnings(value = "WEAK_MESSAGE_DIGEST_MD5", justification =
+            "This method should only be used for non-security applications where the MD5 weakness is not a problem.")
+    @Deprecated
+    private static MessageDigest getMd5() throws NoSuchAlgorithmException {
+        return MessageDigest.getInstance("MD5");
     }
 
     @Nonnull
@@ -692,6 +704,7 @@ public class Util {
      *      number of milliseconds.
      */
     @Nonnull
+    @SuppressFBWarnings(value = "ICAST_IDIV_CAST_TO_DOUBLE", justification = "We want to truncate here.")
     public static String getTimeSpanString(long duration) {
         // Break the duration up in to units.
         long years = duration / ONE_YEAR_MS;
@@ -753,10 +766,12 @@ public class Util {
     /**
      * Get a human readable string representing strings like "xxx days ago",
      * which should be used to point to the occurrence of an event in the past.
+     * @deprecated Actually identical to {@link #getTimeSpanString}, does not add {@code ago}.
      */
+    @Deprecated
     @Nonnull
     public static String getPastTimeString(long duration) {
-        return Messages.Util_pastTime(getTimeSpanString(duration));
+        return getTimeSpanString(duration);
     }
 
 
@@ -866,29 +881,52 @@ public class Util {
         CharBuffer buf = null;
         char c;
         for (int i = 0, m = s.length(); i < m; i++) {
-            c = s.charAt(i);
-            if (c > 122 || uriMap[c]) {
+            int codePoint = Character.codePointAt(s, i);
+            if((codePoint&0xffffff80)==0) { // 1 byte
+                c = s.charAt(i);
+                if (c > 122 || uriMap[c]) {
+                    if (!escaped) {
+                        out = new StringBuilder(i + (m - i) * 3);
+                        out.append(s, 0, i);
+                        escaped = true;
+                    }
+                    if (enc == null || buf == null) {
+                        enc = StandardCharsets.UTF_8.newEncoder();
+                        buf = CharBuffer.allocate(1);
+                    }
+                    // 1 char -> UTF8
+                    buf.put(0, c);
+                    buf.rewind();
+                    try {
+                        ByteBuffer bytes = enc.encode(buf);
+                        while (bytes.hasRemaining()) {
+                            byte b = bytes.get();
+                            out.append('%');
+                            out.append(toDigit((b >> 4) & 0xF));
+                            out.append(toDigit(b & 0xF));
+                        }
+                    } catch (CharacterCodingException ex) {
+                    }
+                } else if (escaped) {
+                    out.append(c);
+                }
+            } else {
                 if (!escaped) {
                     out = new StringBuilder(i + (m - i) * 3);
                     out.append(s, 0, i);
-                    enc = StandardCharsets.UTF_8.newEncoder();
-                    buf = CharBuffer.allocate(1);
                     escaped = true;
                 }
-                // 1 char -> UTF8
-                buf.put(0,c);
-                buf.rewind();
-                try {
-                    ByteBuffer bytes = enc.encode(buf);
-                    while (bytes.hasRemaining()) {
-                        byte b = bytes.get();
-                        out.append('%');
-                        out.append(toDigit((b >> 4) & 0xF));
-                        out.append(toDigit(b & 0xF));
-                    }
-                } catch (CharacterCodingException ex) { }
-            } else if (escaped) {
-                out.append(c);
+
+                byte[] bytes = new String(new int[] { codePoint }, 0, 1).getBytes(StandardCharsets.UTF_8);
+                for (byte aByte : bytes) {
+                    out.append('%');
+                    out.append(toDigit((aByte >> 4) & 0xF));
+                    out.append(toDigit(aByte & 0xF));
+                }
+
+                if(Character.charCount(codePoint) > 1) {
+                    i++; // we processed two characters
+                }
             }
         }
         return escaped ? out.toString() : s;
@@ -967,7 +1005,7 @@ public class Util {
     /**
      * Creates an empty file if nonexistent or truncates the existing file.
      * Note: The behavior of this method in the case where the file already
-     * exists is unlike the POSIX <code>touch</code> utility which merely
+     * exists is unlike the POSIX {@code touch} utility which merely
      * updates the file's access and/or modification time.
      */
     public static void touch(@Nonnull File file) throws IOException {
@@ -1168,6 +1206,65 @@ public class Util {
         return createFileSet(baseDir,includes,null);
     }
 
+    private static void tryToDeleteSymlink(@Nonnull File symlink) {
+        if (!symlink.delete()) {
+            LogRecord record = new LogRecord(Level.FINE, "Failed to delete temporary symlink {0}");
+            record.setParameters(new Object[]{symlink.getAbsolutePath()});
+            LOGGER.log(record);
+        }
+    }
+
+    private static void reportAtomicFailure(@Nonnull Path pathForSymlink, @Nonnull Exception ex) {
+        LogRecord record = new LogRecord(Level.FINE, "Failed to atomically create/replace symlink {0}");
+        record.setParameters(new Object[]{pathForSymlink.toAbsolutePath().toString()});
+        record.setThrown(ex);
+        LOGGER.log(record);
+    }
+
+    /**
+     * Creates a symlink to targetPath at baseDir+symlinkPath.
+     *
+     * @param pathForSymlink
+     *      The absolute path of the symlink itself as a path object.
+     * @param fileForSymlink
+     *      The absolute path of the symlink itself as a file object.
+     * @param target
+     *      The path that the symlink should point to. Usually relative to the directory of the symlink but may instead be an absolute path.
+     * @param symlinkPath
+     *      Where to create a symlink in (relative to {@code baseDir})
+     *
+     * Returns true on success
+     */
+    @CheckReturnValue
+    private static boolean createSymlinkAtomic(@Nonnull Path pathForSymlink, @Nonnull File fileForSymlink, @Nonnull Path target, @Nonnull String symlinkPath) {
+        try {
+            File symlink = File.createTempFile("symtmp", null, fileForSymlink);
+            tryToDeleteSymlink(symlink);
+            Path tempSymlinkPath = symlink.toPath();
+            Files.createSymbolicLink(tempSymlinkPath, target);
+            try {
+                Files.move(tempSymlinkPath, pathForSymlink, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+                return true;
+            } catch (
+                UnsupportedOperationException |
+                SecurityException |
+                IOException ex) {
+                // If we couldn't perform an atomic move or the setup, we fall through to another approach
+                reportAtomicFailure(pathForSymlink, ex);
+            }
+            // If we didn't return after our atomic move, then we want to clean up our symlink
+            tryToDeleteSymlink(symlink);
+        } catch (
+            SecurityException |
+            InvalidPathException |
+            UnsupportedOperationException |
+            IOException ex) {
+            // We couldn't perform an atomic move or the setup.
+            reportAtomicFailure(pathForSymlink, ex);
+        }
+        return false;
+    }
+
     /**
      * Creates a symlink to targetPath at baseDir+symlinkPath.
      * <p>
@@ -1182,16 +1279,21 @@ public class Util {
      */
     public static void createSymlink(@Nonnull File baseDir, @Nonnull String targetPath,
             @Nonnull String symlinkPath, @Nonnull TaskListener listener) throws InterruptedException {
+        File fileForSymlink = new File(baseDir, symlinkPath);
         try {
-            Path path = fileToPath(new File(baseDir, symlinkPath));
+            Path pathForSymlink = fileToPath(fileForSymlink);
             Path target = Paths.get(targetPath, MemoryReductionUtil.EMPTY_STRING_ARRAY);
+
+            if (createSymlinkAtomic(pathForSymlink, fileForSymlink, target, symlinkPath)) {
+                return;
+            }
 
             final int maxNumberOfTries = 4;
             final int timeInMillis = 100;
             for (int tryNumber = 1; tryNumber <= maxNumberOfTries; tryNumber++) {
-                Files.deleteIfExists(path);
+                Files.deleteIfExists(pathForSymlink);
                 try {
-                    Files.createSymbolicLink(path, target);
+                    Files.createSymbolicLink(pathForSymlink, target);
                     break;
                 } catch (FileAlreadyExistsException fileAlreadyExistsException) {
                     if (tryNumber < maxNumberOfTries) {
@@ -1212,7 +1314,7 @@ public class Util {
                 return;
             }
             PrintStream log = listener.getLogger();
-            log.printf("ln %s %s failed%n",targetPath, new File(baseDir, symlinkPath));
+            log.printf("ln %s %s failed%n", targetPath, fileForSymlink);
             Functions.printStackTrace(e, log);
         }
     }
@@ -1554,10 +1656,10 @@ public class Util {
     public static boolean SYMLINK_ESCAPEHATCH = SystemProperties.getBoolean(Util.class.getName()+".symlinkEscapeHatch");
 
     /**
-     * The number of times we will attempt to delete files/directory trees
+     * The number of additional times we will attempt to delete files/directory trees
      * before giving up and throwing an exception.<br/>
-     * Specifying a value less than 1 is invalid and will be treated as if
-     * a value of 1 (i.e. one attempt, no retries) was specified.
+     * Specifying a value less than 0 is invalid and will be treated as if
+     * a value of 0 (i.e. one attempt, no retries) was specified.
      * <p>
      * e.g. if some of the child directories are big, it might take long enough
      * to delete that it allows others to create new files in the directory we
@@ -1568,12 +1670,12 @@ public class Util {
      * give up, thus improving build reliability.
      */
     @Restricted(value = NoExternalUse.class)
-    static int DELETION_MAX = Math.max(1, SystemProperties.getInteger(Util.class.getName() + ".maxFileDeletionRetries", 3));
+    static int DELETION_RETRIES = Math.max(0, SystemProperties.getInteger(Util.class.getName() + ".maxFileDeletionRetries", 2));
 
     /**
      * The time (in milliseconds) that we will wait between attempts to
      * delete files when retrying.<br>
-     * This has no effect unless {@link #DELETION_MAX} is non-zero.
+     * This has no effect unless {@link #DELETION_RETRIES} is non-zero.
      * <p>
      * If zero, we will not delay between attempts.<br>
      * If negative, we will wait an (linearly) increasing multiple of this value
@@ -1585,8 +1687,8 @@ public class Util {
     /**
      * If this flag is set to true then we will request a garbage collection
      * after a deletion failure before we next retry the delete.<br>
-     * It defaults to <code>false</code> and is ignored unless
-     * {@link #DELETION_MAX} is greater than 1.
+     * It defaults to {@code false} and is ignored unless
+     * {@link #DELETION_RETRIES} is non zero.
      * <p>
      * Setting this flag to true <i>may</i> resolve some problems on Windows,
      * and also for directory trees residing on an NFS share, <b>but</b> it can
@@ -1607,7 +1709,7 @@ public class Util {
     static boolean GC_AFTER_FAILED_DELETE = SystemProperties.getBoolean(Util.class.getName() + ".performGCOnFailedDelete");
 
     private static PathRemover newPathRemover(@Nonnull PathRemover.PathChecker pathChecker) {
-        return PathRemover.newFilteredRobustRemover(pathChecker, DELETION_MAX - 1, GC_AFTER_FAILED_DELETE, WAIT_BETWEEN_DELETION_RETRIES);
+        return PathRemover.newFilteredRobustRemover(pathChecker, DELETION_RETRIES, GC_AFTER_FAILED_DELETE, WAIT_BETWEEN_DELETION_RETRIES);
     }
 
     /**

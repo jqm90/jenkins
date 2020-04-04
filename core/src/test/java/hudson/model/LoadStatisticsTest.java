@@ -29,14 +29,12 @@ import hudson.model.queue.SubTask;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
-import org.apache.commons.io.IOUtils;
 import org.jfree.chart.JFreeChart;
 import org.junit.Test;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 
 import static org.hamcrest.CoreMatchers.is;
@@ -103,7 +101,7 @@ public class LoadStatisticsTest {
         assertThat(LoadStatistics.isModern(LoadStatistics.class), is(false));
     }
 
-    private class Modern extends LoadStatistics {
+    private static class Modern extends LoadStatistics {
 
         protected Modern(int initialOnlineExecutors, int initialBusyExecutors) {
             super(initialOnlineExecutors, initialBusyExecutors);

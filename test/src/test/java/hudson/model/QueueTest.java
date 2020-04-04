@@ -33,6 +33,7 @@ import com.gargoylesoftware.htmlunit.html.HtmlForm;
 import com.gargoylesoftware.htmlunit.html.HtmlFormUtil;
 import com.gargoylesoftware.htmlunit.html.HtmlPage;
 import com.gargoylesoftware.htmlunit.xml.XmlPage;
+import hudson.ExtensionList;
 import hudson.Functions;
 import hudson.Launcher;
 import hudson.XmlFile;
@@ -66,6 +67,7 @@ import hudson.slaves.DummyCloudImpl;
 import hudson.slaves.NodeProperty;
 import hudson.slaves.NodePropertyDescriptor;
 import hudson.slaves.NodeProvisionerRule;
+import hudson.slaves.OfflineCause;
 import hudson.tasks.BatchFile;
 import hudson.tasks.BuildTrigger;
 import hudson.tasks.Shell;
@@ -75,7 +77,6 @@ import hudson.util.OneShotEvent;
 import hudson.util.XStream2;
 import jenkins.model.BlockedBecauseOfBuildInProgress;
 import jenkins.model.Jenkins;
-import jenkins.security.apitoken.ApiTokenPropertyConfiguration;
 import jenkins.security.QueueItemAuthenticatorConfiguration;
 import jenkins.security.apitoken.ApiTokenTestHelper;
 import jenkins.triggers.ReverseBuildTrigger;
@@ -131,7 +132,10 @@ import java.util.logging.Level;
 
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.everyItem;
+import static org.hamcrest.Matchers.hasProperty;
 import static org.hamcrest.Matchers.lessThan;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.Assert.*;
 import org.junit.Ignore;
@@ -557,6 +561,9 @@ public class QueueTest {
         }
         @Override public Label getAssignedLabel() {
             return assignedLabel;
+        }
+        public Computer getOwner() {
+            return exec == null ? null : exec.getOwner();
         }
     }
 
@@ -1079,16 +1086,22 @@ public class QueueTest {
     @Test
     @Issue("SECURITY-891")
     public void doCancelItem_PermissionIsChecked() throws Exception {
-        checkCancelOperationUsingUrl(item -> "queue/cancelItem?id=" + item.getId());
+        checkCancelOperationUsingUrl(item -> "queue/cancelItem?id=" + item.getId(), false);
     }
 
     @Test
     @Issue("SECURITY-891")
     public void doCancelQueue_PermissionIsChecked() throws Exception {
-        checkCancelOperationUsingUrl(item -> "queue/item/" + item.getId() + "/cancelQueue");
+        checkCancelOperationUsingUrl(item -> "queue/item/" + item.getId() + "/cancelQueue", true);
     }
 
-    private void checkCancelOperationUsingUrl(Function<Queue.Item, String> urlProvider) throws Exception {
+    /**
+     *
+     * @param urlProvider the endpoint to query
+     * @param legacyRedirect whether the endpoint has the legacy behavior (ie makes a redirect no matter the result)
+     *                       Or it uses the newer response codes introduced by JENKINS-21311
+     */
+    private void checkCancelOperationUsingUrl(Function<Queue.Item, String> urlProvider, boolean legacyRedirect) throws Exception {
         Queue q = r.jenkins.getQueue();
 
         r.jenkins.setCrumbIssuer(null);
@@ -1117,11 +1130,13 @@ public class QueueTest {
                     .withRedirectEnabled(false)
                     .withThrowExceptionOnFailingStatusCode(false);
             wc.login("user");
-            Page p = wc.getPage(request);
-            // currently the endpoint return a redirection to the previously visited page, none in our case
-            // (so force no redirect to avoid false positive error)
-            assertThat(p.getWebResponse().getStatusCode(), lessThan(400));
-
+            if(legacyRedirect) {
+                Page p = wc.getPage(request);
+                // the legacy endpoint returns a redirection to the previously visited page, none in our case
+                // (so force no redirect to avoid false positive error)
+                // see JENKINS-21311
+                assertThat(p.getWebResponse().getStatusCode(), lessThan(400));
+            }
             assertFalse(currentOne.getFuture().isCancelled());
         }
         { // user with right can
@@ -1133,6 +1148,94 @@ public class QueueTest {
             assertThat(p.getWebResponse().getStatusCode(), lessThan(400));
 
             assertTrue(currentOne.getFuture().isCancelled());
+        }
+    }
+
+    @Test
+    public void flyweightsRunOnMasterIfPossible() throws Exception {
+        r.createOnlineSlave();
+        r.jenkins.setNumExecutors(0);
+        List<TestFlyweightTask> tasks = new ArrayList<>();
+        Queue q = r.jenkins.getQueue();
+
+        for (int i = 0; i < 100; i++) {
+            TestFlyweightTask task = new TestFlyweightTask(new AtomicInteger(i), null);
+            tasks.add(task);
+            q.schedule2(task, 0);
+        }
+
+        q.maintain();
+        r.waitUntilNoActivityUpTo(10000);
+        Assert.assertThat(tasks, everyItem(hasProperty("owner", equalTo(Jenkins.get().toComputer()))));
+    }
+
+    @Test
+    public void flyweightsRunOnAgentIfNecessary() throws Exception {
+        r.createOnlineSlave();
+        r.jenkins.setNumExecutors(0);
+        r.jenkins.toComputer().setTemporarilyOffline(true, new OfflineCause.UserCause(null, null));
+        List<TestFlyweightTask> tasks = new ArrayList<>();
+        Queue q = r.jenkins.getQueue();
+
+        for (int i = 0; i < 10; i++) {
+            TestFlyweightTask task = new TestFlyweightTask(new AtomicInteger(i), null);
+            tasks.add(task);
+            q.schedule2(task, 0);
+        }
+
+        q.maintain();
+        r.waitUntilNoActivityUpTo(10000);
+        Assert.assertThat(tasks, everyItem(hasProperty("owner", not(equalTo(Jenkins.get().toComputer())))));
+    }
+
+    @Test
+    @Issue("JENKINS-57805")
+    public void brokenAffinityKey() throws Exception {
+        BrokenAffinityKeyProject brokenProject = r.createProject(BrokenAffinityKeyProject.class, "broken-project");
+        // Before the JENKINS-57805 fix, the test times out because the `NullPointerException` repeatedly thrown from
+        // `BrokenAffinityKeyProject.getAffinityKey()` prevents `Queue.maintain()` from completing.
+        r.buildAndAssertSuccess(brokenProject);
+    }
+
+    public static class BrokenAffinityKeyProject extends Project<BrokenAffinityKeyProject, BrokenAffinityKeyBuild> implements TopLevelItem {
+        public BrokenAffinityKeyProject(ItemGroup parent, String name) {
+            super(parent, name);
+        }
+        @Override
+        public String getAffinityKey() {
+            throw new NullPointerException("oops!");
+        }
+        @Override
+        protected Class<BrokenAffinityKeyBuild> getBuildClass() {
+            return BrokenAffinityKeyBuild.class;
+        }
+        @Override
+        public TopLevelItemDescriptor getDescriptor() {
+            return ExtensionList.lookupSingleton(DescriptorImpl.class);
+        }
+        @TestExtension("brokenAffinityKey")
+        public static class DescriptorImpl extends AbstractProjectDescriptor {
+            @Override
+            public TopLevelItem newInstance(ItemGroup parent, String name) {
+                return new BrokenAffinityKeyProject(parent, name);
+            }
+            @Override
+            public String getDisplayName() {
+                return "Broken Affinity Key Project";
+            }
+        }
+    }
+
+    public static class BrokenAffinityKeyBuild extends Build<BrokenAffinityKeyProject, BrokenAffinityKeyBuild> {
+        public BrokenAffinityKeyBuild(BrokenAffinityKeyProject project) throws IOException {
+            super(project);
+        }
+        public BrokenAffinityKeyBuild(BrokenAffinityKeyProject project, File buildDir) throws IOException {
+            super(project, buildDir);
+        }
+        @Override
+        public void run() {
+            execute(new BuildExecution());
         }
     }
 }
