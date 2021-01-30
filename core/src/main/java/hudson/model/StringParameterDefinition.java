@@ -25,13 +25,15 @@ package hudson.model;
 
 import hudson.Extension;
 import hudson.Util;
-import javax.annotation.Nonnull;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import net.sf.json.JSONObject;
 import org.jenkinsci.Symbol;
 import org.kohsuke.accmod.Restricted;
 import org.kohsuke.accmod.restrictions.DoNotUse;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.StaplerRequest;
+
+import java.util.Objects;
 
 /**
  * Parameter whose value is a string value.
@@ -48,7 +50,6 @@ public class StringParameterDefinition extends SimpleParameterDefinition {
         this.trim = trim;
     }
 
-    @Nonnull
     public StringParameterDefinition(String name, String defaultValue, String description) {
         this(name, defaultValue, description, false);
     }
@@ -110,6 +111,7 @@ public class StringParameterDefinition extends SimpleParameterDefinition {
     @Extension @Symbol({"string","stringParam"})
     public static class DescriptorImpl extends ParameterDescriptor {
         @Override
+        @NonNull
         public String getDisplayName() {
             return Messages.StringParameterDefinition_DisplayName();
         }
@@ -136,5 +138,33 @@ public class StringParameterDefinition extends SimpleParameterDefinition {
             value.doTrim();
         }
         return value;
+    }
+
+    @Override
+    public int hashCode() {
+        if (StringParameterDefinition.class != getClass()) {
+            return super.hashCode();
+        }
+        return Objects.hash(getName(), getDescription(), defaultValue, trim);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (StringParameterDefinition.class != getClass())
+            return super.equals(obj);
+        if (this == obj)
+            return true;
+        if (obj == null)
+            return false;
+        if (getClass() != obj.getClass())
+            return false;
+        StringParameterDefinition other = (StringParameterDefinition) obj;
+        if (!Objects.equals(getName(), other.getName()))
+            return false;
+        if (!Objects.equals(getDescription(), other.getDescription()))
+            return false;
+        if (!Objects.equals(defaultValue, other.defaultValue))
+            return false;
+        return trim == other.trim;
     }
 }

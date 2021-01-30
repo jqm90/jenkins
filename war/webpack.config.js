@@ -6,13 +6,17 @@ const FixStyleOnlyEntriesPlugin = require('webpack-fix-style-only-entries');
 const CopyPlugin = require('copy-webpack-plugin');
 const { CleanWebpackPlugin: CleanPlugin } = require('clean-webpack-plugin');
 
-module.exports = {
+module.exports = (env, argv) => ({
   mode: 'development',
   entry: {
     "page-init": [path.join(__dirname, "src/main/js/page-init.js")],
     "pluginSetupWizard": [
       path.join(__dirname, "src/main/js/pluginSetupWizard.js"),
       path.join(__dirname, "src/main/less/pluginSetupWizard.less"),
+    ],
+    "plugin-manager-ui": [
+      path.join(__dirname, "src/main/js/plugin-manager-ui.js"),
+      path.join(__dirname, "src/main/less/plugin-manager-ui.less"),
     ],
     "upgradeWizard": [path.join(__dirname, "src/main/js/upgradeWizard.js")],
     "add-item": [
@@ -27,6 +31,7 @@ module.exports = {
       path.join(__dirname, "src/main/js/config-tabbar.js"),
       path.join(__dirname, "src/main/js/config-tabbar.less"),
     ],
+    "sortable-drag-drop": [path.join(__dirname, "src/main/js/sortable-drag-drop.js")],
 
     // New UI CSS files
     "base-styles-v2": [path.join(__dirname, "src/main/less/base-styles-v2.less")],
@@ -35,6 +40,7 @@ module.exports = {
   output: {
     path: path.join(__dirname, "src/main/webapp/jsbundles"),
   },
+  devtool: argv.mode === 'production' ? 'source-map' : 'inline-cheap-module-source-map',
   plugins: [
     new FixStyleOnlyEntriesPlugin(),
     new MiniCSSExtractPlugin({
@@ -57,11 +63,18 @@ module.exports = {
     rules: [
       {
         test: /\.(css|less)$/,
-        loader: [
-          MiniCSSExtractPlugin.loader,
+        use: [
+          'style-loader',
+          {
+            loader: MiniCSSExtractPlugin.loader,
+            options: {
+              sourceMap: true
+            }
+          },
           {
             loader: 'css-loader',
             options: {
+              sourceMap: true,
               url: (url, resourcePath) => {
                 // ignore the URLS on the base styles as they are picked
                 // from the src/main/webapp/images dir
@@ -73,7 +86,18 @@ module.exports = {
               }
             }
           },
-          'less-loader'
+          {
+            loader: 'postcss-loader',
+            options: {
+              sourceMap: true
+            }
+          },
+          {
+            loader: 'less-loader',
+            options: {
+              sourceMap: true
+            }
+          }
         ]
       },
       {
@@ -136,4 +160,4 @@ module.exports = {
       handlebars: 'handlebars/runtime',
     },
   },
-}
+});

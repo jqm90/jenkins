@@ -25,7 +25,9 @@ package hudson.tasks;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.AbortException;
+import hudson.EnvVars;
 import hudson.FilePath;
+import hudson.model.AbstractBuild;
 import jenkins.MasterToSlaveFileCallable;
 import hudson.Launcher;
 import hudson.Util;
@@ -53,10 +55,10 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import javax.annotation.CheckForNull;
+import edu.umd.cs.findbugs.annotations.CheckForNull;
 
 import net.sf.json.JSONObject;
-import javax.annotation.Nonnull;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import jenkins.model.BuildDiscarder;
 import jenkins.model.Jenkins;
 import jenkins.tasks.SimpleBuildStep;
@@ -88,7 +90,7 @@ public class ArtifactArchiver extends Recorder implements SimpleBuildStep {
     /**
      * Fail (or not) the build if archiving returns nothing.
      */
-    @Nonnull
+    @NonNull
     private Boolean allowEmptyArchive;
 
     /**
@@ -101,19 +103,19 @@ public class ArtifactArchiver extends Recorder implements SimpleBuildStep {
     /**
      * Default ant exclusion
      */
-    @Nonnull
+    @NonNull
     private Boolean defaultExcludes = true;
     
     /**
      * Indicate whether include and exclude patterns should be considered as case sensitive
      */
-    @Nonnull
+    @NonNull
     private Boolean caseSensitive = true;
 
     /**
      * Indicate whether symbolic links should be followed or not
      */
-    @Nonnull
+    @NonNull
     private Boolean followSymlinks = true;
 
     @DataBoundConstructor public ArtifactArchiver(String artifacts) {
@@ -232,7 +234,7 @@ public class ArtifactArchiver extends Recorder implements SimpleBuildStep {
     }
 
     @Override
-    public void perform(Run<?,?> build, FilePath ws, Launcher launcher, TaskListener listener) throws IOException, InterruptedException {
+    public void perform(Run<?,?> build, FilePath ws, EnvVars environment, Launcher launcher, TaskListener listener) throws IOException, InterruptedException {
         if(artifacts.length()==0) {
             throw new AbortException(Messages.ArtifactArchiver_NoIncludes());
         }
@@ -245,7 +247,10 @@ public class ArtifactArchiver extends Recorder implements SimpleBuildStep {
 
         listener.getLogger().println(Messages.ArtifactArchiver_ARCHIVING_ARTIFACTS());
         try {
-            String artifacts = build.getEnvironment(listener).expand(this.artifacts);
+            String artifacts = this.artifacts;
+            if (build instanceof AbstractBuild) { // no expansion in pipelines
+                artifacts = environment.expand(artifacts);
+            }
 
             Map<String,String> files = ws.act(new ListFiles(artifacts, excludes, defaultExcludes, caseSensitive, followSymlinks));
             if (!files.isEmpty()) {
@@ -255,7 +260,7 @@ public class ArtifactArchiver extends Recorder implements SimpleBuildStep {
                     f.setExcludes(excludes);
                     f.setDefaultExcludes(defaultExcludes);
                     f.setCaseSensitive(caseSensitive);
-                    f.perform(build, ws, launcher, listener);
+                    f.perform(build, ws, environment, launcher, listener);
                 }
             } else {
                 result = build.getResult();

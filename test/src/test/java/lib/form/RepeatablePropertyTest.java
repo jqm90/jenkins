@@ -44,6 +44,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 
 public class RepeatablePropertyTest extends HudsonTestCase implements Describable<RepeatablePropertyTest> {
 
@@ -60,7 +61,7 @@ public class RepeatablePropertyTest extends HudsonTestCase implements Describabl
     }
     
     public void testNullFieldNoDefault() throws Exception {
-        assertFormContents(VIEW_WITHOUT_DEFAULT, new ArrayList<ExcitingObject>());
+        assertFormContents(VIEW_WITHOUT_DEFAULT, new ArrayList<>());
     }
     
     public void testNullFieldWithDefault() throws Exception {
@@ -70,7 +71,7 @@ public class RepeatablePropertyTest extends HudsonTestCase implements Describabl
     
     public void testFieldNotNullWithDefaultIgnoresDefaults() throws Exception {
         testRepeatable = createRepeatable();
-        defaults = new ArrayList<ExcitingObject>(Arrays.asList(
+        defaults = new ArrayList<>(Arrays.asList(
            new ExcitingObject("This default should be ignored"),
            new ExcitingObject("Ignore me too")
         ));
@@ -113,7 +114,7 @@ public class RepeatablePropertyTest extends HudsonTestCase implements Describabl
     
     private List<HtmlTextInput> toTextInputList(final List<HtmlElement> inputs) {
         assertNotNull(inputs);
-        final List<HtmlTextInput> textInputList = new ArrayList<HtmlTextInput>();
+        final List<HtmlTextInput> textInputList = new ArrayList<>();
         for (HtmlElement input : inputs) {
             assertTrue(input instanceof HtmlTextInput);
             textInputList.add((HtmlTextInput) input);
@@ -122,7 +123,7 @@ public class RepeatablePropertyTest extends HudsonTestCase implements Describabl
     }
     
     private ArrayList<ExcitingObject> createRepeatable() {
-        return new ArrayList<ExcitingObject>(Arrays.asList(
+        return new ArrayList<>(Arrays.asList(
            new ExcitingObject("A nice thing"),
            new ExcitingObject("I'm even better"),
            new ExcitingObject("Don't bother, I'm not exciting at all")
@@ -159,7 +160,7 @@ public class RepeatablePropertyTest extends HudsonTestCase implements Describabl
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
             ExcitingObject that = (ExcitingObject) o;
-            if (greatProperty != null ? !greatProperty.equals(that.greatProperty) : that.greatProperty != null)
+            if (!Objects.equals(greatProperty, that.greatProperty))
                 return false;
             return true;
         }

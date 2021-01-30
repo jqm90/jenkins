@@ -27,7 +27,9 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
-import static org.junit.Assert.*;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import com.gargoylesoftware.htmlunit.Page;
 import com.gargoylesoftware.htmlunit.html.HtmlForm;
@@ -37,7 +39,6 @@ import java.io.File;
 import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
 
-import hudson.model.labels.LabelAtom;
 import jenkins.model.Jenkins;
 import hudson.slaves.DumbSlave;
 import hudson.slaves.OfflineCause;
